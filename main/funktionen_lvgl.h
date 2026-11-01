@@ -16,5 +16,6 @@ void activ_text(lv_event_t *e);
 
 void inputfields(int x, int y, int xs, int ys, const char *name);
 void logkonsole(const char *name);
+void chkonsole(const char *name);
 
 #endif
