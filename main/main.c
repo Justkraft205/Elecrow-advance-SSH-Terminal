@@ -37,8 +37,9 @@ char WIFI_PASS[100] = "";
 char SSH_USER[100] = "";
 char SSH_PASSWORD[100] = "";
 char SSH_HOSTNAME[100] = "";
+char hostname_befehl[140];
 char ip[32];
-char SERVER_IP[16] = "";
+char SERVER_IP[16] = "192.168.178.36";
 static int s_retry_num = 0;
 
 #define WIFI_CONNECTED_BIT BIT0
@@ -239,16 +240,19 @@ static void wificonnection(){
 
         logkonsole("SSH Gestartet. Ihre Befehle:");
     } else if (wselect >= 8){
+        snprintf(hostname_befehl, sizeof(hostname_befehl),"%s ", SSH_HOSTNAME);
+        strcat(hostname_befehl,inhalt);
+        chkonsole(hostname_befehl);
         ssh_send_command(inhalt, 0);
     logkonsole(SSH_HOSTNAME);
-ESP_LOGI(TAG, "SSH User: %s", SSH_HOSTNAME);}}
+    ESP_LOGI(TAG, "SSH User: %s", SSH_HOSTNAME);}}
 
 static void button_event(lv_event_t *e){
     if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
         const char *buchstabe = lv_event_get_user_data(e);
         if (strcmp(buchstabe, "<-") == 0) {
             if (strlen(text) > 0) {text[strlen(text) - 1] = '\0';}
-        }else if (strcmp(buchstabe, "!_") == 0 ||strcmp(buchstabe, "_!") == 0) {
+        }else if (strcmp(buchstabe, "!_") == 0 ||strcmp(buchstabe, "_!") == 0 || strcmp(buchstabe, "!_!") == 0) {
             strcat(text, " ");
         }else if (strcmp(buchstabe, "<>") == 0) {
             if (shift == 1) {shift = 0;} else {shift = 1;}
@@ -274,6 +278,7 @@ static void button_event(lv_event_t *e){
                 return;
                 }
                 ssh_send_command("hostname", 1);
+                logkonsole(SSH_HOSTNAME);
             } else {
             wificonnection();
             }
