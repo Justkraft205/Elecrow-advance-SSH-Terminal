@@ -266,14 +266,20 @@ while (1) {
     if (rc > 0) {
         buffer[rc] = '\0';
         ESP_LOGI(TAG, "Antwort: %.*s", rc, buffer);
-        if (test == 1) {
-            ESP_LOGI(TAG, "STARTET TEST");
-            strcpy(SSH_HOSTNAME, buffer);
-            ESP_LOGI(TAG, "buffer bei Hostname: %s", buffer);
-            size_t len = strlen(SSH_HOSTNAME);
-            snprintf(SSH_HOSTNAME + len,sizeof(SSH_HOSTNAME) - len, ":");
-        }
-        else {
+    if (test == 1) {
+        ESP_LOGI(TAG, "STARTET TEST");
+
+        buffer[rc] = '\0';
+
+        buffer[strcspn(buffer, "\r\n")] = '\0';
+
+        strcpy(SSH_HOSTNAME, buffer);
+
+        size_t len = strlen(SSH_HOSTNAME);
+        snprintf(SSH_HOSTNAME + len, sizeof(SSH_HOSTNAME) - len, ":");
+
+        ESP_LOGI(TAG, "SSH Hostname: %s", SSH_HOSTNAME);
+    }else {
             logkonsole(buffer);
         }
         ESP_LOGI(TAG, "Antwort: %.*s", rc, buffer);
