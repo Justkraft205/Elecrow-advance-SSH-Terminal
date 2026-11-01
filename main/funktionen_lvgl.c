@@ -4,6 +4,7 @@ LV_FONT_DECLARE(lv_font_unscii_8);
 
 extern lv_obj_t *keyboard_container;
 extern lv_obj_t *active_field;
+int line2 = 0;
 
 void inputfields(int x, int y, int xs, int ys, const char *name)
 {
@@ -45,4 +46,10 @@ void logkonsole(const char *name){
     lv_label_set_long_mode(label_button[line], LV_LABEL_LONG_CLIP);
     label_y[line] = 300;
     lv_obj_set_pos(label_button[line], 30, label_y[line]);
-    line++;}
+    line++;
+}
+
+void chkonsole(const char *name){
+    line2  = line -1;
+lv_label_set_text(label_button[line2],name);
+}
