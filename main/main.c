@@ -31,7 +31,7 @@ LV_FONT_DECLARE(lv_font_unscii_8);
 lv_obj_t *label_button[100];
 lv_obj_t *label;
 lv_obj_t *keyboard_container;
-
+extern lv_obj_t *input_button[20];
 char WIFI_SSID[100] = "";
 char WIFI_PASS[100] = "";
 char SSH_USER[100] = "";
@@ -51,32 +51,6 @@ void ssh_task(void *pvParameters);
 void senden(const char *befehl);
 void create_keyboard(int check, int shift2);
 
-const char *gbuchstaben[] = {
-    "Q", "W", "E", "R", "T", "Z",
-    "U", "I", "O", "P", "<-", "A",
-    "S", "D", "F", "G", "H", "J",
-    "K", "L", ":", "123", "<>", "Y",
-    "X", "C", "V", "!_", "_!", "B",
-    "N", "M", "->", "^^", "UP"
-};
-
-const char *kbuchstaben[] = {
-    "q", "w", "e", "r", "t", "z",
-    "u", "i", "o", "p", "<-", "a",
-    "s", "d", "f", "g", "h", "j",
-    "k", "l", ".", "123", "<>", "y",
-    "x", "c", "v", "!_", "_!", "b",
-    "n", "m", "->", "^^"
-};
-
-const char *zahlen[] = {
-    "1", "2", "3", "4", "5", "6",
-    "7", "8", "9", "0", "<-", "+",
-    "-", "*", "/", "=", "(", ")",
-    "{", "}", "[", "]", "ABC", "$",
-    "!", "?", "@", "!_!", ".", "<",
-    ">", "#", "->", "^^"
-};
 static char text[100] = "";
 int shift = 0;
 int wselect = 0;
@@ -135,7 +109,6 @@ static void event_handler(void *arg,esp_event_base_t event_base,int32_t event_id
         } else {
             xEventGroupSetBits(s_wifi_event_group,WIFI_FAIL_BIT);
         }
-
     } else if (event_base == IP_EVENT &&event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = event_data;
         ESP_LOGI(TAG, "IP-Adresse: " IPSTR,IP2STR(&event->ip_info.ip));
@@ -203,17 +176,39 @@ static void touch_read_cb(lv_indev_t *indev,lv_indev_data_t *data){
 
 /* WLAN-Eingabe über den Button */
 static void wificonnection(){
-        wselect = wselect + 1;
         const char *inhalt = lv_label_get_text(active_field);
+        if (strcmp(inhalt, "CLOSE") == 0){ssh_close2();}
+        if (strcmp(inhalt, "LOAD") == 0){
+                ESP_LOGI(TAG, "LOAD wurde erkannt");
+                if (load_wifi(1)) {
+                logkonsole("Gespeicherte SSH-Daten geladen");
+                wifi_init_sta();
+                wselect = 7;
+                if (ssh_open() != 0) {
+                logkonsole("Fehlgeschlagen beim Verbinden mit dem Host!");
+                ESP_LOGI(TAG, "SSH User: %s", SSH_USER);
+                ESP_LOGI(TAG, "SSH Passwort: %s", SSH_PASSWORD);
+                logkonsole("SSH-User Name:");
+                wselect = 5;
+                return;
+                }
+                ssh_send_command("hostname", 1);
+                logkonsole(SSH_HOSTNAME);
+            }}
+        wselect = wselect + 1;
         if (wselect == 1){
         logkonsole("WlanName:");
         strcpy(callback, "wificonnection");
         } else if (wselect == 2) {
-            logkonsole(inhalt);
+            ESP_LOGI(TAG, "Eingabe: %s", inhalt);
+            ESP_LOGI(TAG, "Laenge: %d", strlen(inhalt));
+            chkonsole(inhalt);
             strncat(WIFI_SSID, inhalt,sizeof(WIFI_SSID) - strlen(WIFI_SSID) - 1);
             logkonsole("Wlan Passwort:");
         } else if (wselect == 3){
-            logkonsole(inhalt);
+            ESP_LOGI(TAG, "Eingabe: %s", inhalt);
+            ESP_LOGI(TAG, "Laenge: %d", strlen(inhalt));
+            chkonsole(inhalt);
             strncat(WIFI_PASS, inhalt,sizeof(WIFI_PASS) - strlen(WIFI_PASS) - 1);
             wificonnection();
         } else if (wselect == 4){
@@ -221,15 +216,17 @@ static void wificonnection(){
             wifi_init_sta();
             logkonsole("IP des zu verbindenen Gerätes:");
         }else if (wselect == 5){
-            logkonsole(inhalt);
+            chkonsole(inhalt);
             strcpy(SERVER_IP, inhalt);
             logkonsole("Username:");
             configASSERT(xEventGroup != NULL);
         } else if (wselect == 6){
             strcpy(SSH_USER, inhalt);
-        logkonsole("Passwort:");
+            chkonsole(SSH_USER);
+            logkonsole("Passwort:");
     }else if (wselect == 7) {
         strcpy(SSH_PASSWORD, inhalt);
+        chkonsole(SSH_PASSWORD);
         ssh_open();
         if (ssh_open() != 0) {
             wselect = 6;
@@ -247,107 +244,35 @@ static void wificonnection(){
     logkonsole(SSH_HOSTNAME);
     ESP_LOGI(TAG, "SSH User: %s", SSH_HOSTNAME);}}
 
-static void button_event(lv_event_t *e){
+void button_event(lv_event_t *e){
     if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
         const char *buchstabe = lv_event_get_user_data(e);
         if (strcmp(buchstabe, "<-") == 0) {
             if (strlen(text) > 0) {text[strlen(text) - 1] = '\0';}
-        }else if (strcmp(buchstabe, "!_") == 0 ||strcmp(buchstabe, "_!") == 0 || strcmp(buchstabe, "!_!") == 0) {
-            strcat(text, " ");
+        }else if (strcmp(buchstabe, "!_") == 0 ||strcmp(buchstabe, "_!") == 0 || strcmp(buchstabe, "!_!") == 0) {strcat(text, " ");
         }else if (strcmp(buchstabe, "<>") == 0) {
             if (shift == 1) {shift = 0;} else {shift = 1;}
             create_keyboard(1, shift);
         }else if (strcmp(buchstabe, "123") == 0) {
             create_keyboard(1, 2);
         }else if (strcmp(buchstabe, "->") == 0) {
-        if (strcmp(callback, "") != 0) {
-        if (strcmp(callback, "wificonnection") == 0) {
-            if (strcmp(lv_label_get_text(active_field), "CLOSE") == 0){ssh_close2();}
-            if (strcmp(lv_label_get_text(active_field), "LOAD") == 0){
-                ESP_LOGI(TAG, "LOAD wurde erkannt");
-                if (load_wifi(1)) {
-                logkonsole("Gespeicherte WLAN-Daten geladen");
-                wifi_init_sta();
-                wselect = 7;
-                if (ssh_open() != 0) {
-                logkonsole("Fehlgeschlagen beim Verbinden mit dem Host!");
-                ESP_LOGI(TAG, "SSH User: %s", SSH_USER);
-                ESP_LOGI(TAG, "SSH Passwort: %s", SSH_PASSWORD);;
-                logkonsole("SSH-User Name:");
-                wselect = 5;
-                return;
-                }
-                ssh_send_command("hostname", 1);
-                logkonsole(SSH_HOSTNAME);
-            } else {
-            wificonnection();
-            }
-
-            } else{wificonnection();}
-        }
-    }
-}
-        else if (strcmp(buchstabe, "ABC") == 0) {create_keyboard(1, 0);
-        }else if (strcmp(buchstabe, "UP") == 0) {
-            create_keyboard(1, 0);
-        }
+        if (strcmp(callback, "wificonnection") == 0) {wificonnection();}
+        } else if (strcmp(buchstabe, "ABC") == 0) {create_keyboard(1, shift);
+        }else if (strcmp(buchstabe, "UP") == 0) {create_keyboard(1, 0);}
         else if (strcmp(buchstabe, "^^") == 0) {
+            if (shift == -1){create_keyboard(1,0);
+            shift = 0;} else{
             create_keyboard(0,0);
+            shift = -1;}
+            return;
         }
         else {strcat(text, buchstabe);
         }
         lv_label_set_text(active_field, text);
-    }
-}
-
-static lv_obj_t *keyboard(const char *button_text,int x, int y, int sx, int sy, int check,lv_event_cb_t callback){
-    lv_obj_t *button;
-    if (check == 1) {button = lv_button_create(keyboard_container);
-    } else { button = lv_button_create(lv_screen_active());}
-    lv_obj_remove_flag(keyboard_container, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_bg_color(button, lv_color_make(128, 128, 128), 0);
-    lv_obj_set_style_bg_color(button, lv_color_hex(0x000000),LV_PART_MAIN | LV_STATE_PRESSED);
-    lv_obj_set_size(button, sx, sy);
-    lv_obj_set_pos(button, x, y);
-    lv_obj_set_style_radius(button, 0, 0);
-    lv_obj_set_style_shadow_width(button, 0, 0);
-    lv_obj_t *label_button = lv_label_create(button);
-    lv_label_set_text(label_button, button_text);
-    lv_obj_set_style_text_font(label_button, &lv_font_unscii_8, 0);
-    lv_obj_set_style_text_color(label_button, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_style_text_opa(label_button, LV_OPA_COVER, 0);
-    lv_obj_center(label_button);
-    lv_obj_add_event_cb(button, callback, LV_EVENT_CLICKED,(void *)button_text);
-    return button;
-}
-
-void create_keyboard(int check, int shift2){
-    if (keyboard_container != NULL) {
-        lv_obj_delete(keyboard_container);
-        keyboard_container = NULL;}
-    if (check == 1) {
-        keyboard_container = lv_obj_create(lv_screen_active());
-        lv_obj_set_size(keyboard_container, 1024, 280);
-        lv_obj_set_pos(keyboard_container, 0, 320);
-        lv_obj_set_style_bg_opa(keyboard_container, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(keyboard_container, 0, 0);
-        lv_obj_set_style_pad_all(keyboard_container, 0, 0);
-        int xh = 0;
-        int yh = 0;
-        for (int i = 0; i < 34; i++) {
-            if (i == 33) {
-                xh = 0;
-                yh = 0;}else if (i < 11) {
-                xh = i * 93;
-                yh = 70;}else if (i < 22) {
-                xh = (i - 11) * 93;
-                yh = 140;}else {
-                xh = (i - 22) * 93;
-                yh = 210;}
-            keyboard(shift2 == 2 ? zahlen[i] :shift2 == 1 ? kbuchstaben[i] :gbuchstaben[i],xh, yh, 93,70, check, button_event);}
-    }else {keyboard(gbuchstaben[34], 0, 550, 50 , 50, check,button_event);}}
+    }}
 
 void open_ssh_app(){
+    create_keyboard(1, 0);
     inputfields(100, 330, 924, 60, "befehl");
     wselect = 0;
     wificonnection();
@@ -389,7 +314,6 @@ void app_main(void){
     lv_obj_set_pos(label, 0, 0);
     lv_obj_set_style_border_width(label, 0, 0);
     lv_obj_set_style_pad_all(label, 0, 0);
-    create_keyboard(1, 0);
     open_ssh_app();
     lvgl_port_unlock();
     while (1) {vTaskDelay(pdMS_TO_TICKS(100));}
