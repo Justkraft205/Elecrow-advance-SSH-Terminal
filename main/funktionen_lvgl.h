@@ -6,6 +6,7 @@
 
 extern lv_obj_t *active_field;
 extern lv_obj_t *keyboard_container;
+extern lv_obj_t *input_button[20];
 
 extern lv_obj_t *label_button[100];
 extern lv_obj_t *label;
@@ -17,5 +18,7 @@ void activ_text(lv_event_t *e);
 void inputfields(int x, int y, int xs, int ys, const char *name);
 void logkonsole(const char *name);
 void chkonsole(const char *name);
+void create_keyboard(int check, int shift2);
+void button_event(lv_event_t *e);
 
 #endif
