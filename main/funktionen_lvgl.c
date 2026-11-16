@@ -72,16 +72,17 @@ void logkonsole(const char *name){
 
     for (int i = 0; i < line; i++) {
     label_y[i] = ylinee;
+    ESP_LOGI(TAG, "%d", label_y[i]);
     lv_obj_set_pos(label_button[i], 30, label_y[i]);
     ylinee += 20;
-}
-
-    } else if (strcmp(name, "Back") == 0){
+}} else if (strcmp(name, "Back") == 0){
         ESP_LOGI(TAG, "Erweiterung rückgängig");
     ylinee = 300 - ((line - 1) * 20);
+    ESP_LOGI(TAG, "%d", ylinee);
 
     for (int i = 0; i < line; i++) {
     label_y[i] = ylinee;
+    ESP_LOGI(TAG, "%d", label_y[i]);
     lv_obj_set_pos(label_button[i], 30, label_y[i]);
     ylinee += 20;
     }
@@ -89,6 +90,7 @@ void logkonsole(const char *name){
     if (line >= 100) return;
     for (int i = 0; i < line; i++) {
         label_y[i] -= 20;
+        ESP_LOGI(TAG, "%d", label_y[i]);
         lv_obj_set_pos(label_button[i], 30, label_y[i]);}
     label_button[line] = lv_label_create(label);
     lv_obj_set_layout(label, LV_LAYOUT_NONE);
@@ -120,7 +122,7 @@ void create_keyboard(int check, int shift2){
         lv_obj_delete(keyboard_container);
         keyboard_container = NULL;}
     if (check == 1) {
-        lv_obj_set_size(label, 1024, 300);
+        lv_obj_set_size(label, 1024, 320);
         lv_obj_set_pos(label, 0, 0);
         if (active_field != NULL){ lv_obj_set_pos(input_button[0], 100, 330);}
         keyboard_container = lv_obj_create(lv_screen_active());
@@ -142,6 +144,13 @@ void create_keyboard(int check, int shift2){
                 xh = (i - 22) * 93;
                 yh = 210;}
             keyboard(shift2 == 2 ? zahlen[i] :shift2 == 1 ? kbuchstaben[i] :gbuchstaben[i],xh, yh, 93,70, check, button_event);}
+        lv_obj_t *rand = lv_obj_create(keyboard_container);
+    lv_obj_set_size(rand, 1, 280);
+    lv_obj_set_pos(rand, 1023, 0);
+    lv_obj_set_style_bg_color(rand, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(rand, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(rand, 0, 0);
+    lv_obj_set_style_radius(rand, 0, 0);     
     }else {
     lv_obj_set_size(label, 1024, 530);
     lv_obj_set_pos(label, 0, 0);
@@ -151,7 +160,7 @@ void create_keyboard(int check, int shift2){
     lv_obj_set_style_bg_opa(keyboard_container, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(keyboard_container, 0, 0);
     lv_obj_set_style_pad_all(keyboard_container, 0, 0);
-    keyboard(gbuchstaben[33], 0, 550, 50, 50, check, button_event);
+    keyboard(gbuchstaben[33], 0, 530, 100, 70, check, button_event);
     lv_obj_set_pos(input_button[0], 100, 530);
     logkonsole("Erweiterung");}}
 
