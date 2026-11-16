@@ -38,6 +38,7 @@ char SSH_USER[100] = "";
 char SSH_PASSWORD[100] = "";
 char SSH_HOSTNAME[100] = "";
 char hostname_befehl[140];
+int Backlight = 0;
 char ip[32];
 char SERVER_IP[16] = "192.168.178.36";
 static int s_retry_num = 0;
@@ -97,7 +98,6 @@ static bool load_wifi(int select){
     return err1 == ESP_OK && err2 == ESP_OK;
 }
 
-
 static void event_handler(void *arg,esp_event_base_t event_base,int32_t event_id,void *event_data){
     if (event_base == WIFI_EVENT &&
         event_id == WIFI_EVENT_STA_START) {
@@ -114,8 +114,7 @@ static void event_handler(void *arg,esp_event_base_t event_base,int32_t event_id
         ESP_LOGI(TAG, "IP-Adresse: " IPSTR,IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-    }
-}
+    }}
 
 /* WLAN starten */
 static void wifi_init_sta(void){
@@ -162,6 +161,122 @@ static void wifi_init_sta(void){
     vEventGroupDelete(s_wifi_event_group);
 }
 
+
+void remove_ansi(char *str)
+{
+    char *src = str;
+    char *dst = str;
+
+    while (*src) {
+
+        if ((unsigned char)*src == 0x1B) {
+
+            src++;
+
+            // CSI-Sequenz: ESC [
+            if (*src == '[') {
+                src++;
+
+                while (*src &&
+                       !((*src >= 'A' && *src <= 'Z') ||
+                         (*src >= 'a' && *src <= 'z'))) {
+                    src++;
+                }
+
+                if (*src)
+                    src++;
+
+                continue;
+            }
+
+            // OSC-Sequenz: ESC ]
+            else if (*src == ']') {
+                src++;
+
+                while (*src) {
+
+                    // Ende durch BEL
+                    if ((unsigned char)*src == 0x07) {
+                        src++;
+                        break;
+                    }
+
+                    if ((unsigned char)*src == 0x1B &&
+                        src[1] == '\\') {
+                        src += 2;
+                        break;
+                    }
+
+                    src++;
+                }
+
+                continue;
+            }
+        }
+
+        // Normales Zeichen übernehmen
+        *dst++ = *src++;
+    }
+
+    *dst = '\0';
+}
+
+
+void ssh_shell_task(void *pvParameters)
+{
+    char buffer[256];
+    char line[512];
+
+    int pos = 0;
+
+    while (1) {
+
+        int rc = ssh_shell_read(buffer, sizeof(buffer));
+
+        if (rc > 0) {
+
+            for (int i = 0; i < rc; i++) {
+
+                char c = buffer[i];
+
+                if (c == '\r')
+                    continue;
+
+  if (c == '\n') {
+
+    line[pos] = '\0';
+
+    remove_ansi(line);
+
+    if (lvgl_port_lock(-1)) {
+        ESP_LOGE("SSH", "line: %s", line);
+        logkonsole(line);
+        lvgl_port_unlock();
+    }
+
+    pos = 0;
+}
+else if (pos < sizeof(line) - 1) {
+    line[pos++] = c;
+}
+                else if (pos < sizeof(line) - 1) {
+
+                    line[pos++] = c;
+                }
+            }
+        }
+
+        else if (rc < 0) {
+            ESP_LOGE("SSH", "Shell beendet");
+            break;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(30));
+    }
+
+    vTaskDelete(NULL);
+}
+
 /* Touch für LVGL */
 static void touch_read_cb(lv_indev_t *indev,lv_indev_data_t *data){
     uint16_t x, y;
@@ -178,6 +293,14 @@ static void touch_read_cb(lv_indev_t *indev,lv_indev_data_t *data){
 static void wificonnection(){
         const char *inhalt = lv_label_get_text(active_field);
         if (strcmp(inhalt, "CLOSE") == 0){ssh_close2();}
+        if (strcmp(inhalt, "BG") == 0){
+        Backlight = 2;
+        return;}
+        if (Backlight == 2){
+            Backlight = atoi(inhalt);
+            set_lcd_blight(Backlight);
+            return;
+        }
         if (strcmp(inhalt, "LOAD") == 0){
                 ESP_LOGI(TAG, "LOAD wurde erkannt");
                 if (load_wifi(1)) {
@@ -192,8 +315,12 @@ static void wificonnection(){
                 wselect = 5;
                 return;
                 }
+                ssh_shell_open();
+                
                 ssh_send_command("hostname", 1);
                 logkonsole(SSH_HOSTNAME);
+                xTaskCreate(ssh_shell_task,"ssh_shell",4096,NULL,5,NULL);
+                return;
             }}
         wselect = wselect + 1;
         if (wselect == 1){
@@ -239,9 +366,10 @@ static void wificonnection(){
     } else if (wselect >= 8){
         snprintf(hostname_befehl, sizeof(hostname_befehl),"%s ", SSH_HOSTNAME);
         strcat(hostname_befehl,inhalt);
-        chkonsole(hostname_befehl);
-        ssh_send_command(inhalt, 0);
-    logkonsole(SSH_HOSTNAME);
+        /*chkonsole(hostname_befehl);*/
+        ssh_shell_send(inhalt);
+        ssh_shell_send("\n");
+    /*logkonsole(SSH_HOSTNAME);*/
     ESP_LOGI(TAG, "SSH User: %s", SSH_HOSTNAME);}}
 
 void button_event(lv_event_t *e){
@@ -261,6 +389,7 @@ void button_event(lv_event_t *e){
         }else if (strcmp(buchstabe, "UP") == 0) {create_keyboard(1, 0);}
         else if (strcmp(buchstabe, "^^") == 0) {
             if (shift == -1){create_keyboard(1,0);
+                logkonsole("Back");
             shift = 0;} else{
             create_keyboard(0,0);
             shift = -1;}
@@ -308,9 +437,9 @@ void app_main(void){
     initalize();
     xEventGroup = xEventGroupCreate();
     configASSERT(xEventGroup != NULL);
-    set_lcd_blight(40);
+    set_lcd_blight(20);
     label = lv_obj_create(lv_screen_active());
-    lv_obj_set_size(label, 1024, 320);
+    lv_obj_set_size(label, 1024,320);
     lv_obj_set_pos(label, 0, 0);
     lv_obj_set_style_border_width(label, 0, 0);
     lv_obj_set_style_pad_all(label, 0, 0);
