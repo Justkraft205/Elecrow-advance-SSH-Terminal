@@ -1,4 +1,3 @@
-
 #ifndef FUNKTIONEN_LVGL_H
 #define FUNKTIONEN_LVGL_H
 
