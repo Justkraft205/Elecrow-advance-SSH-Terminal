@@ -31,6 +31,8 @@ LV_FONT_DECLARE(lv_font_unscii_8);
 lv_obj_t *label_button[100];
 lv_obj_t *label;
 lv_obj_t *keyboard_container;
+static bool wifi_initialized = false;
+static bool wifi_started = false;
 extern lv_obj_t *input_button[20];
 char WIFI_SSID[100] = "";
 char WIFI_PASS[100] = "";
@@ -51,6 +53,7 @@ static EventGroupHandle_t s_wifi_event_group;
 void ssh_task(void *pvParameters);
 void senden(const char *befehl);
 void create_keyboard(int check, int shift2);
+static void wificonnection();
 
 static char text[100] = "";
 int shift = 0;
@@ -60,8 +63,9 @@ static const char *TAG = "ESP32";
 static EventGroupHandle_t wifi_events;
 static bool wifi_task_started = false;
 
-void activ_text(lv_event_t *e){active_field = lv_event_get_user_data(e);
-lv_label_set_text(active_field, "");}
+void activ_text(lv_event_t *e){
+    active_field = lv_event_get_user_data(e);
+    lv_label_set_text(active_field, "");}
 
 /* WLAN-Daten speichern */
 static void save_wifi(void){
@@ -116,19 +120,49 @@ static void event_handler(void *arg,esp_event_base_t event_base,int32_t event_id
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }}
 
-/* WLAN starten */
-static void wifi_init_sta(void){
-    s_wifi_event_group = xEventGroupCreate();
+static int wifi_init_sta(void){
+
+    if (s_wifi_event_group == NULL) {
+        s_wifi_event_group = xEventGroupCreate();
+    }
+
     ESP_LOGI(TAG, "IN WIFI STA");
     ESP_LOGI(TAG, "WLAN-Name: %s", WIFI_SSID);
-    ESP_LOGI(TAG, "WLAN-Passwort: %s", WIFI_PASS);
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    esp_netif_create_default_wifi_sta();
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID,&event_handler, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP,&event_handler, NULL));
+
+    // Einmalige Initialisierung
+    if (!wifi_initialized) {
+
+        ESP_ERROR_CHECK(esp_netif_init());
+
+        esp_err_t err = esp_event_loop_create_default();
+
+        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+            return 0;
+        }
+
+        esp_netif_create_default_wifi_sta();
+
+        wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+        ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+        ESP_ERROR_CHECK(esp_event_handler_register(
+            WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL));
+
+        ESP_ERROR_CHECK(esp_event_handler_register(
+            IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler, NULL));
+
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+
+        wifi_initialized = true;
+    }
+
+    // Alte Ereignisse löschen
+    xEventGroupClearBits(
+        s_wifi_event_group,
+        WIFI_CONNECTED_BIT | WIFI_FAIL_BIT
+    );
+
+    // Neue Zugangsdaten übernehmen
     wifi_config_t wifi_config = {
         .sta = {
             .threshold.authmode = WIFI_AUTH_WPA2_PSK,
@@ -138,27 +172,44 @@ static void wifi_init_sta(void){
             }
         }
     };
-    strncpy((char *)wifi_config.sta.ssid, WIFI_SSID,sizeof(wifi_config.sta.ssid) - 1);
-    strncpy((char *)wifi_config.sta.password, WIFI_PASS,sizeof(wifi_config.sta.password) - 1);
-    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+
+    strncpy((char *)wifi_config.sta.ssid,
+        WIFI_SSID, sizeof(wifi_config.sta.ssid) - 1);
+
+    strncpy((char *)wifi_config.sta.password,
+        WIFI_PASS, sizeof(wifi_config.sta.password) - 1);
+
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
+
+    // WLAN nur einmal starten
+    if (!wifi_started) {
+        ESP_ERROR_CHECK(esp_wifi_start());
+        wifi_started = true;
+    } else {
+        ESP_ERROR_CHECK(esp_wifi_connect());
+    }
+
+    // Auf Verbindung warten
     EventBits_t bits = xEventGroupWaitBits(
         s_wifi_event_group,
         WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
         pdFALSE,
         pdFALSE,
-        portMAX_DELAY);
+        portMAX_DELAY
+    );
+
     if (bits & WIFI_CONNECTED_BIT) {
         ESP_LOGI(TAG, "WLAN verbunden");
-    } else {
-        ESP_LOGE(TAG, "WLAN-Verbindung fehlgeschlagen");
-        abort();
+        return 1;
     }
-    ESP_ERROR_CHECK(esp_event_handler_unregister( WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler));
-    ESP_ERROR_CHECK(esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler));
-    vEventGroupDelete(s_wifi_event_group);
+
+    ESP_LOGE(TAG, "WLAN-Verbindung fehlgeschlagen");
+    logkonsole("WLAN-Verbindung fehlgeschlagen!");
+    logkonsole("Erneute Eingabe:");
+    wselect = 1;
+
+    return 0;
 }
 
 
@@ -291,7 +342,25 @@ static void touch_read_cb(lv_indev_t *indev,lv_indev_data_t *data){
 
 /* WLAN-Eingabe über den Button */
 static void wificonnection(){
-        const char *inhalt = lv_label_get_text(active_field);
+        char inhalt[256];
+
+   if (lvgl_port_lock(-1)) {
+
+    ESP_LOGI(TAG, "Vorher: %s", lv_label_get_text(active_field));
+
+    strncpy(inhalt, lv_label_get_text(active_field), sizeof(inhalt) - 1);
+    inhalt[sizeof(inhalt) - 1] = '\0';
+
+    lv_label_set_text(active_field, "");
+    strcpy(text, "");
+
+    ESP_LOGI(TAG, "Nachher: %s", lv_label_get_text(active_field));
+
+    lvgl_port_unlock();
+
+} else {
+    ESP_LOGE(TAG, "LVGL Lock fehlgeschlagen!");
+}
         if (strcmp(inhalt, "CLOSE") == 0){ssh_close2();}
         if (strcmp(inhalt, "BG") == 0){
         Backlight = 2;
@@ -309,10 +378,8 @@ static void wificonnection(){
                 wselect = 7;
                 if (ssh_open() != 0) {
                 logkonsole("Fehlgeschlagen beim Verbinden mit dem Host!");
-                ESP_LOGI(TAG, "SSH User: %s", SSH_USER);
-                ESP_LOGI(TAG, "SSH Passwort: %s", SSH_PASSWORD);
-                logkonsole("SSH-User Name:");
-                wselect = 5;
+                logkonsole("IP des zu verbindenen Gerätes:");
+                wselect = 4;
                 return;
                 }
                 ssh_shell_open();
@@ -330,17 +397,24 @@ static void wificonnection(){
             ESP_LOGI(TAG, "Eingabe: %s", inhalt);
             ESP_LOGI(TAG, "Laenge: %d", strlen(inhalt));
             chkonsole(inhalt);
+            WIFI_SSID[0] = '\0';
             strncat(WIFI_SSID, inhalt,sizeof(WIFI_SSID) - strlen(WIFI_SSID) - 1);
+            ESP_LOGI(TAG, "WLANnameinwificonnection: %s", WIFI_SSID);
+
             logkonsole("Wlan Passwort:");
         } else if (wselect == 3){
             ESP_LOGI(TAG, "Eingabe: %s", inhalt);
             ESP_LOGI(TAG, "Laenge: %d", strlen(inhalt));
             chkonsole(inhalt);
+            WIFI_PASS[0] = '\0';
             strncat(WIFI_PASS, inhalt,sizeof(WIFI_PASS) - strlen(WIFI_PASS) - 1);
             wificonnection();
         } else if (wselect == 4){
             logkonsole("Verbinde mit WLAN...");
-            wifi_init_sta();
+            if (wifi_init_sta() == 0){
+                logkonsole("WlanName:");
+                return;
+            }
             logkonsole("IP des zu verbindenen Gerätes:");
         }else if (wselect == 5){
             chkonsole(inhalt);
@@ -384,7 +458,9 @@ void button_event(lv_event_t *e){
         }else if (strcmp(buchstabe, "123") == 0) {
             create_keyboard(1, 2);
         }else if (strcmp(buchstabe, "->") == 0) {
-        if (strcmp(callback, "wificonnection") == 0) {wificonnection();}
+        if (strcmp(callback, "wificonnection") == 0) {
+            wificonnection();
+            return;}
         } else if (strcmp(buchstabe, "ABC") == 0) {create_keyboard(1, shift);
         }else if (strcmp(buchstabe, "UP") == 0) {create_keyboard(1, 0);}
         else if (strcmp(buchstabe, "^^") == 0) {
@@ -404,6 +480,7 @@ void open_ssh_app(){
     create_keyboard(1, 0);
     inputfields(100, 330, 924, 60, "befehl");
     wselect = 0;
+    vTaskDelay(pdMS_TO_TICKS(100));
     wificonnection();
 }
 
